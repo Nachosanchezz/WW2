@@ -44,6 +44,8 @@ def chunk_text(text:str, size: int, overlap: int):
         end = min(start + size, length)
         chunk = text[start:end]
         chunks.append(chunk)
+        if end == length:
+            break
         start = end - overlap
         if start < 0:
             start = 0

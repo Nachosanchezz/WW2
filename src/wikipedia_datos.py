@@ -8,6 +8,7 @@ from config import DATA_PROCESSED
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_PROCESSED = BASE_DIR / "data" / "processed"
+WIKI_FILE = DATA_PROCESSED / "wiki_docs.jsonl"
 
 # IMPORTANTE: pon aquí algo identificable tuyo (recomendado por Wikipedia)
 HEADERS = {
