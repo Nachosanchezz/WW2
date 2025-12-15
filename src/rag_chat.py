@@ -81,7 +81,11 @@ def retrieve_context(question: str, k: int = 5) -> List[Dict[str, Any]]:
     q_vec = embedder.encode([question], show_progress_bar=False)
     q_vec = np.asarray(q_vec, dtype="float32")
 
+# Normaliza la query igual que los docs
+    faiss.normalize_L2(q_vec)
+
     distances, indices = index.search(q_vec, k)
+
 
     results: List[Dict[str, Any]] = []
     for rank, idx in enumerate(indices[0]):
@@ -120,6 +124,21 @@ def call_llama(prompt: str, system_prompt: Optional[str] = None) -> str:
         return data["message"].get("content", "").strip()
 
     return str(data)
+
+# ==========================
+# TRADUCCIÓN PARA RETRIEVAL
+# ==========================
+
+def translate_question_to_english(question: str) -> str:
+    """
+    Traduce la pregunta al inglés SOLO para mejorar el retrieval.
+    La respuesta final seguirá siendo en español.
+    """
+    system = (
+        "You are a translation engine. Translate to English. "
+        "Return ONLY the translated question. No explanations."
+    )
+    return call_llama(question, system_prompt=system).strip()
 
 
 # ==========================
@@ -168,8 +187,9 @@ Responde en español, claro y breve.
 # ==========================
 
 def answer_with_rag(question: str, k: int = 5) -> Dict[str, Any]:
-    context_docs = retrieve_context(question, k=k)
-    prompt = build_rag_prompt(question, context_docs)
+    question_en = translate_question_to_english(question)
+    context_docs = retrieve_context(question_en, k=k)   # retrieval en inglés
+    prompt = build_rag_prompt(question, context_docs)   # pregunta original (ES)
 
     system_prompt = (
         "Eres un asistente experto en Segunda Guerra Mundial. "
@@ -201,7 +221,7 @@ if __name__ == "__main__":
         if q.lower() in {"salir", "exit", "quit"}:
             break
 
-        result = answer_with_rag(q, k=5)
+        result = answer_with_rag(q, k=8)
 
         print("\nAsistente:\n")
         print(result["answer"])

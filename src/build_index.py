@@ -1,6 +1,7 @@
 import json
 import numpy as np
 import faiss
+from openai import embeddings
 from sentence_transformers import SentenceTransformer
 
 from config import DOCUMENTS_FILE, INDEX_DIR  # usa config, no redefinas rutas
@@ -39,6 +40,9 @@ def main():
     embeddings = modelo.encode(textos, batch_size=128, show_progress_bar=True)
     embeddings = np.asarray(embeddings, dtype="float32")
 
+    # Normaliza embeddings -> coseno
+    faiss.normalize_L2(embeddings)
+    
     dimension = embeddings.shape[1]
     index = faiss.IndexFlatL2(dimension)
     index.add(embeddings)
