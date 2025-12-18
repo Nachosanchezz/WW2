@@ -72,29 +72,63 @@ embedder = SentenceTransformer(EMBEDDING_MODEL_NAME)
 # RETRIEVAL
 # ==========================
 
-def retrieve_context(question: str, k: int = 5) -> List[Dict[str, Any]]:
+EAST_KEYS = [
+    "barbarossa", "eastern front", "stalingrad", "leningrad", "moscow",
+    "caucasus", "case blue", "fall blau", "kalach", "volga", "typhoon",
+    "reichsbahn", "railway gauge", "operation uranus"
+]
+
+WEST_KEYS = [
+    "overlord", "normandy", "d-day", "market garden", "bulge",
+    "torch", "husky", "italian campaign", "north african campaign"
+]
+
+
+def retrieve_context(question: str, k_final: int = 10, k_retrieve: int = 60) -> List[Dict[str, Any]]:
     """
-    Devuelve los k chunks más parecidos según FAISS.
-    Para IndexFlatL2: distances es distancia (menor = mejor).
-    Para IndexFlatIP: distances es similitud (mayor = mejor).
+    Recupera k_retrieve candidatos del índice FAISS y devuelve solo los k_final mejores,
+    aplicando un rerank heurístico para evitar mezclar frentes (East vs West).
     """
     q_vec = embedder.encode([question], show_progress_bar=False)
     q_vec = np.asarray(q_vec, dtype="float32")
 
-# Normaliza la query igual que los docs
+    # Normaliza igual que los documentos (coseno)
     faiss.normalize_L2(q_vec)
 
-    distances, indices = index.search(q_vec, k)
+    distances, indices = index.search(q_vec, k_retrieve)
 
+    q = question.lower()
+    query_is_east = any(k in q for k in EAST_KEYS)
 
     results: List[Dict[str, Any]] = []
     for rank, idx in enumerate(indices[0]):
         if 0 <= idx < len(METADATOS):
             doc = dict(METADATOS[idx])
+
+            title = ((doc.get("metadata", {}) or {}).get("title") or "").lower()
+            text_head = (doc.get("texto") or "")[:2500].lower()
+
+            raw_dist = float(distances[0][rank])  # L2: menor = mejor
+
+            # Base score: invertimos distancia para que "más alto = mejor"
+            score = -raw_dist
+
+            # Heurística: si la query es del Este, premia docs del Este y penaliza docs del Oeste
+            if query_is_east:
+                if any(k in title or k in text_head for k in EAST_KEYS):
+                    score += 0.25
+                if any(k in title for k in WEST_KEYS):
+                    score -= 0.35
+
             doc["_rank"] = rank + 1
-            doc["_score"] = float(distances[0][rank])
+            doc["_raw_dist"] = raw_dist
+            doc["_score"] = score
             results.append(doc)
-    return results
+
+    # Más alto = mejor (porque ya invertimos la distancia y aplicamos bonus/penalty)
+    results.sort(key=lambda d: d["_score"], reverse=True)
+    return results[:k_final]
+
 
 
 # ==========================
@@ -108,13 +142,16 @@ def call_llama(prompt: str, system_prompt: Optional[str] = None) -> str:
     messages.append({"role": "user", "content": prompt})
 
     payload = {
-        "model": LLAMA_MODEL,
-        "messages": messages,
-        "stream": False,
-        "options": {
-            "temperature": 0.2,
-        },
-    }
+    "model": LLAMA_MODEL,
+    "messages": messages,
+    "stream": False,
+    "options": {
+        "temperature": 0.2,
+        "num_predict": 500,   # 👈 MÁS TOKENS DE SALIDA
+        "top_p": 0.9
+    },
+}
+
 
     resp = requests.post(OLLAMA_URL, json=payload, timeout=180)
     resp.raise_for_status()
@@ -166,19 +203,46 @@ def build_rag_prompt(question: str, context_docs: List[Dict[str, Any]]) -> str:
     context_str = "\n\n---\n\n".join(context_parts)
 
     return f"""
-Usa EXCLUSIVAMENTE la siguiente información de contexto para responder a la pregunta.
-Si la respuesta no está claramente en el contexto, di que no aparece en los documentos.
+    Responde usando EXCLUSIVAMENTE la información del CONTEXTO.
+    No uses conocimiento externo ni inventes datos.
 
-Si la pregunta pide un número (personas, muertos, años, fechas), responde PRIMERO con la cifra o la fecha,
-y luego añade como máximo una breve explicación de 1–2 frases. No des contexto general si no se pide.
+    PRIMERO, identifica el tipo de pregunta:
 
-Contexto:
+    TIPO A — Pregunta factual concreta
+    - Pide un dato único (nombre, fecha, año, número, lugar).
+    - Ejemplos: 
+    "¿En qué año nació Hitler?"
+    "¿Con quién se casó Adolf Hitler?"
+    "¿Cuántos murieron en X?"
+
+    Responde SOLO con el dato o una frase muy corta.
+    NO añadas introducción, viñetas ni contexto adicional.
+
+    TIPO B — Pregunta explicativa
+    - Pide causas, consecuencias, desarrollo o explicación.
+    - Ejemplos:
+    "¿Cómo fue el desembarco de Normandía?"
+    "¿Por qué fracasó Barbarroja?"
+    "¿Qué papel jugó X?"
+
+    Responde con:
+    - 1 párrafo introductorio breve
+    - 4–8 viñetas con hechos clave (causa → efecto)
+    - 1 párrafo final de conclusión
+
+    REGLAS IMPORTANTES:
+    - Si la respuesta literal NO aparece en el contexto, dilo claramente.
+    - Si la pregunta es factual y el dato NO aparece, di: 
+        "No aparece ese dato en los documentos disponibles."
+    - No mezcles estilos: factual = corto, explicativa = desarrollada.
+
+CONTEXTO:
 {context_str}
 
-Pregunta:
+PREGUNTA:
 {question}
 
-Responde en español, claro y breve.
+RESPUESTA (en español):
 """.strip()
 
 
@@ -188,15 +252,15 @@ Responde en español, claro y breve.
 
 def answer_with_rag(question: str, k: int = 5) -> Dict[str, Any]:
     question_en = translate_question_to_english(question)
-    context_docs = retrieve_context(question_en, k=k)   # retrieval en inglés
+    context_docs = retrieve_context(question_en, k_final=10, k_retrieve=60)   # retrieval en inglés
     prompt = build_rag_prompt(question, context_docs)   # pregunta original (ES)
 
     system_prompt = (
         "Eres un asistente experto en Segunda Guerra Mundial. "
         "Respondes SIEMPRE en español. "
-        "Tu prioridad es responder directo y conciso. "
         "No inventes: usa solo el contexto proporcionado. "
-        "Si el contexto no tiene la respuesta, dilo claramente."
+        "Si falta la respuesta literal, dilo y responde con lo más cercano del contexto. "
+        "No inventes."
     )
 
     answer = call_llama(prompt, system_prompt=system_prompt)
