@@ -147,7 +147,7 @@ def call_llama(prompt: str, system_prompt: Optional[str] = None) -> str:
     "stream": False,
     "options": {
         "temperature": 0.2,
-        "num_predict": 500,   # 👈 MÁS TOKENS DE SALIDA
+        "num_predict": 1500,   # 👈 MÁS TOKENS DE SALIDA
         "top_p": 0.9
     },
 }
@@ -203,38 +203,23 @@ def build_rag_prompt(question: str, context_docs: List[Dict[str, Any]]) -> str:
     context_str = "\n\n---\n\n".join(context_parts)
 
     return f"""
-    Responde usando EXCLUSIVAMENTE la información del CONTEXTO.
-    No uses conocimiento externo ni inventes datos.
+    Eres un historiador especialista en la Segunda Guerra Mundial.
 
-    PRIMERO, identifica el tipo de pregunta:
+REGLAS IMPORTANTES:
+1) Si la pregunta NO está relacionada con la Segunda Guerra Mundial, SOLO INDICA QUE ESTA FUERA DEL ALCANCE DEL SISTEMA SIN AÑADIR DATOS
+2) Responde ÚNICAMENTE usando información que aparezca EXPLÍCITAMENTE en el CONTEXTO.
+3) Si faltan datos, di qué falta exactamente (no solo “no hay info”).
+4) La respuesta debe ser DETALLADA, no un resumen corto.
+5) Estructura la respuesta con secciones y viñetas cuando convenga.
+6) Incluye SIEMPRE un apartado final "Fuentes" con artículos y URLs usados.
+7) NUNCA puedes añadir información de eventos posteriores a no ser que tenga consecuencias directas en la Segunda Guerra Mundial.
+ 
 
-    TIPO A — Pregunta factual concreta
-    - Pide un dato único (nombre, fecha, año, número, lugar).
-    - Ejemplos: 
-    "¿En qué año nació Hitler?"
-    "¿Con quién se casó Adolf Hitler?"
-    "¿Cuántos murieron en X?"
+FORMATO OBLIGATORIO DE LA RESPUESTA:
+## Respuesta (explicación detallada, con orden lógico)
+### Datos clave (lista de hechos concretos extraídos del contexto)
+### Fuentes (lista de: artículo + URL).
 
-    Responde SOLO con el dato o una frase muy corta.
-    NO añadas introducción, viñetas ni contexto adicional.
-
-    TIPO B — Pregunta explicativa
-    - Pide causas, consecuencias, desarrollo o explicación.
-    - Ejemplos:
-    "¿Cómo fue el desembarco de Normandía?"
-    "¿Por qué fracasó Barbarroja?"
-    "¿Qué papel jugó X?"
-
-    Responde con:
-    - 1 párrafo introductorio breve
-    - 4–8 viñetas con hechos clave (causa → efecto)
-    - 1 párrafo final de conclusión
-
-    REGLAS IMPORTANTES:
-    - Si la respuesta literal NO aparece en el contexto, dilo claramente.
-    - Si la pregunta es factual y el dato NO aparece, di: 
-        "No aparece ese dato en los documentos disponibles."
-    - No mezcles estilos: factual = corto, explicativa = desarrollada.
 
 CONTEXTO:
 {context_str}
@@ -242,7 +227,7 @@ CONTEXTO:
 PREGUNTA:
 {question}
 
-RESPUESTA (en español):
+RESPUESTA (en español, siguiendo el formato y las reglas del sistema):
 """.strip()
 
 
@@ -256,11 +241,8 @@ def answer_with_rag(question: str, k: int = 5) -> Dict[str, Any]:
     prompt = build_rag_prompt(question, context_docs)   # pregunta original (ES)
 
     system_prompt = (
-        "Eres un asistente experto en Segunda Guerra Mundial. "
-        "Respondes SIEMPRE en español. "
-        "No inventes: usa solo el contexto proporcionado. "
-        "Si falta la respuesta literal, dilo y responde con lo más cercano del contexto. "
-        "No inventes."
+        "Eres un asistente RAG sobre la Segunda Guerra Mundial. "
+    "Respondes SIEMPRE en español."
     )
 
     answer = call_llama(prompt, system_prompt=system_prompt)

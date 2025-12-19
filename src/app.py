@@ -12,113 +12,12 @@ import base64
 # ==========================
 st.set_page_config(page_title="WW2", page_icon="🪖", layout="centered")
 
-def img_to_base64(path: str) -> str:
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-BG_PATH = "assets/bg.jpg"      # <-- tu foto
-LOGO_PATH = "assets/logo.png"  # <-- opcional
-
-bg_b64 = img_to_base64(BG_PATH)
-logo_b64 = img_to_base64(LOGO_PATH) if Path(LOGO_PATH).exists() else None
-
-CUSTOM_CSS = f"""
+CUSTOM_CSS = """
 <style>
-/* Layout general */
-.block-container {{
-  max-width: 980px;
-  padding-top: 2.2rem;
-  padding-bottom: 2rem;
-}}
-
-/* Fondo con imagen + overlay */
-.stApp {{
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.92) 100%),
-    url("data:image/jpg;base64,{bg_b64}");
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-}}
-
-/* “Hero” arriba */
-.hero {{
-  text-align: center;
-  padding: 22px 18px 14px 18px;
-  margin-bottom: 18px;
-}}
-
-.hero-card {{
-  display: inline-block;
-  padding: 18px 22px;
-  border-radius: 18px;
-  background: rgba(255,255,255,0.78);
-  border: 1px solid rgba(0,0,0,0.06);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-}}
-
-.hero-title {{
-  font-size: 44px;
-  line-height: 1.05;
-  margin: 0;
-  font-weight: 800;
-  letter-spacing: -0.6px;
-  color: #111827;
-}}
-
-.hero-sub {{
-  margin-top: 8px;
-  font-size: 15px;
-  color: rgba(17,24,39,0.72);
-}}
-
-/* Logo grande */
-.hero-logo {{
-  width: 86px;
-  height: 86px;
-  margin: 0 auto 10px auto;
-  border-radius: 22px;
-  background: rgba(255,255,255,0.85);
-  border: 1px solid rgba(0,0,0,0.06);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.08);
-}}
-
-.hero-logo img {{
-  width: 58px;
-  height: 58px;
-  object-fit: contain;
-}}
-
-/* Chat container en tarjeta */
-.chat-shell {{
-  border-radius: 18px;
-  background: rgba(255,255,255,0.86);
-  border: 1px solid rgba(0,0,0,0.06);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 12px 34px rgba(0,0,0,0.10);
-  padding: 10px 10px 6px 10px;
-}}
-
-/* Input más tipo ChatGPT */
-div[data-testid="stChatInput"] textarea {{
-  border-radius: 999px !important;
-  padding: 14px 16px !important;
-  border: 1px solid rgba(0,0,0,0.10) !important;
-}}
-
-/* Mensajes: un pelín más suaves */
-div[data-testid="stChatMessage"] {{
-  padding-top: 8px;
-  padding-bottom: 8px;
-}}
+.block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-
 
 # ==========================
 # IMPORTA TU PROYECTO
@@ -128,7 +27,6 @@ try:
 except Exception as e:
     st.error(f"No puedo importar rag_chat.py. Error: {e}")
     st.stop()
-
 
 # ==========================
 # CARGA RECURSOS (cacheados)
@@ -161,25 +59,19 @@ if "messages" not in st.session_state:
 # ==========================
 # HEADER (logo grande)
 # ==========================
-APP_NAME = "ARCHIVO 39-45"
-TAGLINE = "Si quieres cultivar tu mente con historia, estás en el lugar correcto."
-
-st.markdown('<div class="hero">', unsafe_allow_html=True)
-st.markdown('<div class="hero-card">', unsafe_allow_html=True)
-
-if logo_b64:
-    st.markdown(
-        f'<div class="hero-logo"><img src="data:image/png;base64,{logo_b64}" /></div>',
-        unsafe_allow_html=True
-    )
-else:
-    st.markdown('<div class="hero-logo">🪖</div>', unsafe_allow_html=True)
-
-st.markdown(f'<h1 class="hero-title">{APP_NAME}</h1>', unsafe_allow_html=True)
-st.markdown(f'<div class="hero-sub">{TAGLINE}</div>', unsafe_allow_html=True)
-
-st.markdown('</div></div>', unsafe_allow_html=True)
-
+st.markdown(
+    """
+    <div style="text-align:center; margin-top: 6px; margin-bottom: 10px;">
+        <div style="font-size:72px; line-height: 1;">🪖</div>
+        <div style="font-size:42px; font-weight:800;">WW2</div>
+        <div style="opacity:0.7; margin-top: 6px;">
+            Si quieres aprender y culturizarte sobre la Segunda Guerra Mundial, ¡pregúntame!
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+st.divider()
 
 # ==========================
 # LOAD ONCE
@@ -213,10 +105,6 @@ use_rerank = True
 # ==========================
 # RENDER CHAT HISTORY (sin fuentes)
 # ==========================
-
-st.markdown('<div class="chat-shell">', unsafe_allow_html=True)
-
-
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
@@ -239,84 +127,130 @@ if user_q:
         answer_placeholder = st.empty()
         answer_placeholder.markdown("Pensando…")
 
-        # decide query para retrieval
-        retrieval_q = user_q
-        if use_translation:
-            try:
-                retrieval_q = rc.translate_question_to_english(user_q)
-            except Exception:
-                retrieval_q = user_q  # fallback
-
-        # retrieval
-        if use_rerank:
-            context_docs = rc.retrieve_context(
-                retrieval_q,
-                k_final=int(k_final),
-                k_retrieve=int(k_retrieve)
-            )
-        else:
-            q_vec = embedder.encode([retrieval_q], show_progress_bar=False).astype("float32")
-            faiss.normalize_L2(q_vec)
-            distances, indices = index.search(q_vec, int(k_retrieve))
-
-            tmp = []
-            for r, idx in enumerate(indices[0][:int(k_final)]):
-                if 0 <= idx < len(METADATOS):
-                    d = dict(METADATOS[idx])
-                    d["_rank"] = r + 1
-                    d["_raw_dist"] = float(distances[0][r])
-                    d["_score"] = -float(distances[0][r])
-                    tmp.append(d)
-            context_docs = tmp
-
-        # prompt + system_prompt (tuyo, intacto)
-        prompt = rc.build_rag_prompt(user_q, context_docs)
-
-        system_prompt = (
-            "Eres un asistente experto en Segunda Guerra Mundial. "
-            "Respondes SIEMPRE en español. "
-            "No inventes: usa solo el contexto proporcionado. "
-            "Si falta la respuesta literal, dilo y responde con lo más cercano del contexto. "
-            "No inventes."
-        )
-
-        # call_llama_custom (tu misma función)
-        def call_llama_custom(prompt: str, system_prompt: Optional[str] = None) -> str:
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
-
-            payload = {
-                "model": model_name,
-                "messages": messages,
-                "stream": False,
-                "options": {
-                    "temperature": float(temperature),
-                    "num_predict": int(num_predict),
-                    "top_p": float(top_p)
-                },
-            }
-            import requests
-            resp = requests.post(rc.OLLAMA_URL, json=payload, timeout=180)
-            resp.raise_for_status()
-            data = resp.json()
-            if isinstance(data, dict) and "message" in data:
-                return data["message"].get("content", "").strip()
-            return str(data)
-
-        # llamada real
+        # ==========================================================
+        # ✅ BLOQUE NUEVO: FILTRO DE ALCANCE (NO LLAMAR AL LLM SI NO WW2)
+        # ==========================================================
+        is_related = True
         try:
-            answer = call_llama_custom(prompt, system_prompt=system_prompt)
-        except Exception as e:
-            answer = f"❌ Error llamando a Ollama: {e}"
+            # Si existe en tu rag_chat.py, usamos TU función
+            if hasattr(rc, "is_ww2_related"):
+                is_related = bool(rc.is_ww2_related(user_q))
+        except Exception:
+            is_related = True  # si falla, no bloqueamos por error
 
-        # pinta respuesta en el placeholder
-        answer_placeholder.markdown(answer)
+        if not is_related:
+            answer = "Fuera del alcance del sistema."
+            answer_placeholder.markdown(answer)
+
+        else:
+            # decide query para retrieval
+            retrieval_q = user_q
+            if use_translation:
+                try:
+                    retrieval_q = rc.translate_question_to_english(user_q)
+                except Exception:
+                    retrieval_q = user_q  # fallback
+
+            # retrieval
+            if use_rerank:
+                context_docs = rc.retrieve_context(
+                    retrieval_q,
+                    k_final=int(k_final),
+                    k_retrieve=int(k_retrieve)
+                )
+            else:
+                q_vec = embedder.encode([retrieval_q], show_progress_bar=False).astype("float32")
+                faiss.normalize_L2(q_vec)
+                distances, indices = index.search(q_vec, int(k_retrieve))
+
+                tmp = []
+                for r, idx in enumerate(indices[0][:int(k_final)]):
+                    if 0 <= idx < len(METADATOS):
+                        d = dict(METADATOS[idx])
+                        d["_rank"] = r + 1
+                        d["_raw_dist"] = float(distances[0][r])
+                        d["_score"] = -float(distances[0][r])
+                        tmp.append(d)
+                context_docs = tmp
+
+            # ==========================================================
+            # ✅ BLOQUE NUEVO: SI EL CONTEXTO ESTÁ VACÍO O NO RELACIONADO,
+            # NO LLAMAR AL LLM (evita “Napoleón”, “Revolución”, etc.)
+            # ==========================================================
+            def _looks_relevant(docs: List[Dict[str, Any]], q_es: str) -> bool:
+                """
+                Heurística simple (sin LLM):
+                - Si no hay docs -> no relevante
+                - Si hay docs pero TODOS tienen score muy malo -> no relevante
+                """
+                if not docs:
+                    return False
+
+                # si tienes _score (normalmente negativo), filtramos los muy malos
+                scores = []
+                for d in docs:
+                    s = d.get("_score")
+                    if isinstance(s, (int, float)):
+                        scores.append(float(s))
+
+                # Si no hay scores, asumimos que hay algo
+                if not scores:
+                    return True
+
+                # Ajusta este umbral si lo necesitas:
+                # - como usas -distancia, cuanto más cerca de 0 mejor (menos negativo)
+                best = max(scores)
+                return best > -1.25  # umbral conservador
+
+            if not _looks_relevant(context_docs, user_q):
+                answer = "La respuesta no aparece en las fuentes actuales."
+                answer_placeholder.markdown(answer)
+            else:
+                # prompt + system_prompt (tuyo, intacto)
+                prompt = rc.build_rag_prompt(user_q, context_docs)
+
+                system_prompt = (
+                    "Eres un asistente experto en Segunda Guerra Mundial. "
+                    "Respondes SIEMPRE en español. "
+                    "No inventes: usa solo el contexto proporcionado. "
+                    "Si falta la respuesta literal, dilo y responde con lo más cercano del contexto. "
+                    "No inventes."
+                )
+
+                # call_llama_custom (tu misma función)
+                def call_llama_custom(prompt: str, system_prompt: Optional[str] = None) -> str:
+                    messages = []
+                    if system_prompt:
+                        messages.append({"role": "system", "content": system_prompt})
+                    messages.append({"role": "user", "content": prompt})
+
+                    payload = {
+                        "model": model_name,
+                        "messages": messages,
+                        "stream": False,
+                        "options": {
+                            "temperature": float(temperature),
+                            "num_predict": int(num_predict),
+                            "top_p": float(top_p)
+                        },
+                    }
+                    import requests
+                    resp = requests.post(rc.OLLAMA_URL, json=payload, timeout=180)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    if isinstance(data, dict) and "message" in data:
+                        return data["message"].get("content", "").strip()
+                    return str(data)
+
+                # llamada real (SOLO si hay contexto relevante)
+                try:
+                    answer = call_llama_custom(prompt, system_prompt=system_prompt)
+                except Exception as e:
+                    answer = f"❌ Error llamando a Ollama: {e}"
+
+                # pinta respuesta en el placeholder
+                answer_placeholder.markdown(answer)
 
     # 4) guarda respuesta en memoria y refresca
     st.session_state.messages.append({"role": "assistant", "content": answer})
     st.rerun()
-
-st.markdown('</div>', unsafe_allow_html=True)
-
